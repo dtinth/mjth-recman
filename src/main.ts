@@ -11,7 +11,9 @@ const env = Env(
     API_GATEWAY_PORT: z.coerce.number().int(),
     API_GATEWAY_API_KEY: z.string(),
     API_GATEWAY_DEBUG: z.coerce.boolean().optional(),
-    RECORDING_DIRECTORY_PREFIX: z.string(),
+    RECORDING_DIRECTORY_PREFIX: z
+      .string()
+      .default("/var/local/jamulus/recordings"),
   })
 );
 
