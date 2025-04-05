@@ -196,20 +196,145 @@ async function recordSession(sessionId: string) {
 }
 
 async function uploadRecording(sessionId: string, dir: string) {
-  return "TODO";
+  if (!env.UPLOAD_ENDPOINT_URL || !env.UPLOAD_ENDPOINT_KEY) {
+    log(`Upload endpoint not configured, skipping upload`);
+    return null;
+  }
 
-  // 1. Wait until the recording directory contains a file matching `**/.lof`.
-  // 2. Generate a zip file using the "zip" command, piping the output to stdout.
-  // 3. Stream the zip file to the upload endpoint using a PUT request.
-  //       Add query param: ?path=multitrack/<sessionId>.zip
-  //       Set the "Content-Type" header to "application/zip".
-  //       Set the "Authorization" header to "Bearer <UPLOAD_ENDPOINT_KEY>".
-  // The response contains "url" fields.
+  log(`Preparing to upload recording from ${dir}`);
+
+  // 1. Wait until the recording directory contains a file matching `**/.lof` by polling every 1 second.
+  let foundLofFile = false;
+  for (let attempt = 0; attempt < 30 && !foundLofFile; attempt++) {
+    try {
+      const glob = new Bun.Glob("**/*.lof");
+      const files: string[] = [];
+      for await (const file of glob.scan({ cwd: dir })) {
+        files.push(file);
+        if (files.length > 0) break;
+      }
+      foundLofFile = files.length > 0;
+
+      if (foundLofFile) {
+        log(`Found .lof file, recording is ready for upload`);
+        break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+    } catch (error) {
+      log(`Error checking for .lof file: ${error}`);
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+    }
+  }
+
+  if (!foundLofFile) {
+    log(`No .lof file found after waiting, upload may be incomplete`);
+  }
+
+  // Retry upload up to 3 times
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      log(`Upload attempt ${attempt}/3`);
+
+      // 2. Generate a zip file and stream it to the HTTP endpoint
+      const zipProcess = Bun.spawn(["zip", "-r", "-", "."], {
+        cwd: dir,
+        stdout: "pipe",
+      });
+
+      // 3. Stream the zip file to the upload endpoint
+      const response = await fetch(
+        `${env.UPLOAD_ENDPOINT_URL}?path=multitrack/${sessionId}.zip`,
+        {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/zip",
+            Authorization: `Bearer ${env.UPLOAD_ENDPOINT_KEY}`,
+          },
+          body: zipProcess.stdout,
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error(`Upload failed with status ${response.status}`);
+      }
+
+      const result = await response.json();
+      log(`Upload successful`);
+
+      if (result.url) {
+        await sendChat(`recording is available at: ${result.url}`);
+        return result.url;
+      } else {
+        log(`Upload successful but URL not found in response`);
+        return "Upload successful";
+      }
+    } catch (error) {
+      log(`Upload attempt ${attempt} failed: ${error}`);
+      if (attempt === 3) {
+        log(`All upload attempts failed`);
+        await sendChat(`unable to upload recording after multiple attempts`);
+        return null;
+      } else {
+        await sendChat(`unable to upload recording, retrying…`);
+      }
+      // Wait before retrying
+      await new Promise((resolve) => setTimeout(resolve, 2000 * attempt));
+    }
+  }
+
+  return null;
 }
 
 async function cleanupRecordingFolders() {
-  // Do an rm -rf on each subdirectory of the recording directory prefix,
-  // but only if the directory is older than 1 hour.
+  try {
+    log("Checking for old recording folders to clean up");
+
+    // Get list of subdirectories in the recording directory
+    const glob = new Bun.Glob("*");
+    const dirs: string[] = [];
+
+    for await (const dir of glob.scan({
+      cwd: env.RECORDING_DIRECTORY_PREFIX,
+      absolute: true,
+      onlyFiles: false,
+    })) {
+      // Check if it's a directory
+      try {
+        const stat = await Bun.file(dir).stat();
+        if (stat.isDirectory()) {
+          dirs.push(dir);
+        }
+      } catch (error) {
+        log(`Error checking if ${dir} is a directory: ${error}`);
+      }
+    }
+
+    if (dirs.length === 0) {
+      return;
+    }
+
+    // Current time minus 1 hour in milliseconds
+    const oneHourAgo = Date.now() - 3600 * 1000;
+
+    for (const dir of dirs) {
+      try {
+        // Get the directory's modification time
+        const stat = await Bun.file(dir).stat();
+        const mtime = stat.mtimeMs;
+
+        // Check if the directory is older than 1 hour
+        if (mtime < oneHourAgo) {
+          log(`Removing old recording folder: ${dir}`);
+          // Use the Bun.write API to remove directories
+          Bun.$`rm -rf ${dir}`;
+        }
+      } catch (error) {
+        log(`Error processing directory ${dir}: ${error}`);
+      }
+    }
+  } catch (error) {
+    log(`Error cleaning up recording folders: ${error}`);
+  }
 }
 
 async function main() {
