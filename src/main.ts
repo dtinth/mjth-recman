@@ -14,6 +14,8 @@ const env = Env(
     RECORDING_DIRECTORY_PREFIX: z
       .string()
       .default("/var/local/jamulus/recordings"),
+    UPLOAD_ENDPOINT_URL: z.string().optional(),
+    UPLOAD_ENDPOINT_KEY: z.string().optional(),
   })
 );
 
@@ -147,6 +149,11 @@ async function recordSession(sessionId: string) {
       return status.enabled;
     });
     await sendChat(`your recording id is: ${sessionId}`);
+    if (!env.UPLOAD_ENDPOINT_URL) {
+      await sendChat(
+        `WARNING: upload endpoint not set, recording will not be uploaded`
+      );
+    }
 
     await rxjs.firstValueFrom(
       rxjs.merge(
@@ -178,10 +185,31 @@ async function recordSession(sessionId: string) {
       return !status.enabled;
     });
     await sendChat(`recording stopped`);
+
+    // Upload the recording to the server
+    const url = await uploadRecording(sessionId, dir);
+    log(`${url}`);
   } catch (e) {
     await sendChat(`An error occurred while recording...`);
     throw e;
   }
+}
+
+async function uploadRecording(sessionId: string, dir: string) {
+  return "TODO";
+
+  // 1. Wait until the recording directory contains a file matching `**/.lof`.
+  // 2. Generate a zip file using the "zip" command, piping the output to stdout.
+  // 3. Stream the zip file to the upload endpoint using a PUT request.
+  //       Add query param: ?path=multitrack/<sessionId>.zip
+  //       Set the "Content-Type" header to "application/zip".
+  //       Set the "Authorization" header to "Bearer <UPLOAD_ENDPOINT_KEY>".
+  // The response contains "url" fields.
+}
+
+async function cleanupRecordingFolders() {
+  // Do an rm -rf on each subdirectory of the recording directory prefix,
+  // but only if the directory is older than 1 hour.
 }
 
 async function main() {
@@ -211,6 +239,7 @@ async function main() {
         console.error(e);
       }
     } finally {
+      await cleanupRecordingFolders();
       await new Promise((resolve) => setTimeout(resolve, 1000));
     }
   }
