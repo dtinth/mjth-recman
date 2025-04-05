@@ -236,7 +236,7 @@ async function uploadRecording(sessionId: string, dir: string) {
       log(`Upload attempt ${attempt}/3`);
 
       // 2. Generate a zip file and stream it to the HTTP endpoint
-      const zipProcess = Bun.spawn(["zip", "-r", "-", "."], {
+      const zipProcess = Bun.spawn(["zip", "-r", "-1", "-", "."], {
         cwd: dir,
         stdout: "pipe",
       });
