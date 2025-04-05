@@ -7,8 +7,8 @@ import { z } from "zod";
 
 const env = Env(
   z.object({
-    GOJAM_API_PORT: z.coerce.number().int(),
-    API_GATEWAY_PORT: z.coerce.number().int(),
+    GOJAM_API_PORT: z.coerce.number().int().default(9999),
+    API_GATEWAY_PORT: z.coerce.number().int().default(63127),
     API_GATEWAY_API_KEY: z.string(),
     API_GATEWAY_DEBUG: z.coerce.boolean().optional(),
     RECORDING_DIRECTORY_PREFIX: z
