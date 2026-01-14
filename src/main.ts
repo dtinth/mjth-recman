@@ -7,7 +7,9 @@ import { z } from "zod";
 
 const env = Env(
   z.object({
+    GOJAM_API_HOST: z.string().default("localhost"),
     GOJAM_API_PORT: z.coerce.number().int().default(9999),
+    API_GATEWAY_HOST: z.string().default("localhost"),
     API_GATEWAY_PORT: z.coerce.number().int().default(63127),
     API_GATEWAY_API_KEY: z.string(),
     API_GATEWAY_DEBUG: z.coerce.boolean().optional(),
@@ -22,7 +24,7 @@ const env = Env(
 const seenIds = new Set<string>();
 
 const eventSource = new EventSource(
-  `http://localhost:${env.GOJAM_API_PORT}/events`
+  `http://${env.GOJAM_API_HOST}:${env.GOJAM_API_PORT}/events`
 );
 
 interface GojamEvent {
@@ -92,7 +94,7 @@ async function rpc<K extends keyof RpcMethod>(
   params: RpcMethod[K]["params"]
 ): Promise<RpcMethod[K]["result"]> {
   const { result } = await ofetch<JsonRpcResponse<RpcMethod[K]["result"]>>(
-    `http://localhost:${env.API_GATEWAY_PORT}/rpc/${method}`,
+    `http://${env.API_GATEWAY_HOST}:${env.API_GATEWAY_PORT}/rpc/${method}`,
     {
       method: "POST",
       headers: { "x-api-key": env.API_GATEWAY_API_KEY },
@@ -106,7 +108,7 @@ async function rpc<K extends keyof RpcMethod>(
 }
 
 async function sendChat(message: string) {
-  await ofetch(`http://localhost:${env.GOJAM_API_PORT}/chat`, {
+  await ofetch(`http://${env.GOJAM_API_HOST}:${env.GOJAM_API_PORT}/chat`, {
     method: "POST",
     body: { message },
   });
